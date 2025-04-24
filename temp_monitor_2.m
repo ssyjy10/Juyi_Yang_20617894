@@ -1,3 +1,14 @@
+% This section initializes the Arduino and calls the temp_monitor function
+% to perform real-time temperature monitoring with LED indicators.
+% Green LED (D2): 18-24°C (steady), Yellow LED (D3): <18°C (0.5s blink),
+% Red LED (D4): >24°C (0.25s blink). A live plot shows temperature over time.
+
+% Initialize Arduino
+a = arduino('COM4', 'Uno');
+
+% Call the temp_monitor function
+% Note: Run this and stop manually (Ctrl+C) as it runs indefinitely
+temp_monitor(a);
 function temp_monitor(arduino)
     % Configure LED pins
     configurePin(arduino, 'D2', 'DigitalOutput'); % Green LED
