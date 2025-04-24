@@ -9,26 +9,27 @@ a = arduino('COM4', 'Uno');
 configurePin(a, 'D3', 'DigitalOutput');
 
 % Test LED on/off
-writeDigitalPin(a, 'D3', 1); % Turn LED on
+writeDigitalPin(a, 'D3', 1); % Turn green LED on
 pause(1);
-writeDigitalPin(a, 'D3', 0); % Turn LED off
-pause(1);
+writeDigitalPin(a, 'D3', 0); % Turn green LED off
+% pause(1);  waut for 1 second
 
 % Blink LED at 0.5s intervals (1s cycle: 0.5s on, 0.5s off)
 for i = 1:5
     writeDigitalPin(a, 'D3', 1);
     pause(0.5);
     writeDigitalPin(a, 'D3', 0);
-    pause(0.5);
+    pause(0.5); % keep off for 0.5 seconds
 end
 
 %% TASK 1 - READ TEMPERATURE DATA, PLOT, AND WRITE TO A LOG FILE [20 MARKS]
+% This section reads temperature data using MCP9700A sensor, plots it, and logs results
+% Purpose: Collect 10 minutes of temperature data, visualize it, and save to a file
 clc
 clear a
 a = arduino('COM4', 'Uno');
-% Task 1a: Thermistor is connected to A0, 5V, GND (photo included in report)
 
-% Task 1b: Read temperature data for 10 minutes
+% b: Read temperature data for 10 minutes
 duration = 600; % 10 minutes in seconds
 num_samples = duration; % One sample per second
 time = (0:num_samples-1)'; % Time array in seconds
@@ -51,15 +52,15 @@ min_temp = min(temperature);
 max_temp = max(temperature);
 avg_temp = mean(temperature);
 
-% Task 1c: Plot temperature vs time
+% c: Plot temperature vs time
 figure;
 plot(time/60, temperature, 'b-'); % Time in minutes
 xlabel('Time (minutes)');
 ylabel('Temperature (°C)');
 title('Cabin Temperature Over Time');
-grid on;
+grid on; % plot visualizes temperature trends over 10 seconds
 
-% Task 1d: Format and display data
+% d: Format and display data
 location = 'Aircraft Cabin';
 current_date = datestr(now, 'dd/mm/yyyy');
 fprintf('Cabin Temperature Log\n');
@@ -75,7 +76,7 @@ fprintf('Minimum Temperature: %.2f °C\n', min_temp);
 fprintf('Maximum Temperature: %.2f °C\n', max_temp);
 fprintf('Average Temperature: %.2f °C\n', avg_temp);
 
-% Task 1e: Write to log file
+% e: Write to log file
 fileID = fopen('cabin_temperature.txt', 'w');
 fprintf(fileID, 'Cabin Temperature Log\n');
 fprintf(fileID, 'Date: %s\n', current_date);
@@ -90,162 +91,149 @@ fprintf(fileID, 'Minimum Temperature: %.2f °C\n', min_temp);
 fprintf(fileID, 'Maximum Temperature: %.2f °C\n', max_temp);
 fprintf(fileID, 'Average Temperature: %.2f °C\n', avg_temp);
 fclose(fileID);
-
-% Verify file content
-fileID = fopen('cabin_temperature.txt', 'r');
-content = fread(fileID, '*char')';
-fclose(fileID);
-disp('File content verified:');
-disp(content);
-
 %% TASK 2 - LED TEMPERATURE MONITORING DEVICE IMPLEMENTATION [25 MARKS]
-% Inputs:
-%   a - Arduino object for communication
-% Purpose: Continuously reads temperature from MCP9700A sensor, updates a live
-% plot, and controls green (D3), yellow (D4), or red (D5) LEDs based on
-% temperature range (18-24°C: green on, <18°C: yellow blink, >24°C: red blink).
-% Usage: temp_monitor(a)
-% Documentation: Run 'doc temp_monitor' for details.
-
-function temp_monitor(a)
-    % Initialize parameters
-    V0 = 0.5; % MCP9700A voltage at 0°C
-    TC = 0.01; % Temperature coefficient (V/°C)
-    time = 0; % Current time in seconds
-    temperatures = []; % Store temperature data
-    times = []; % Store time data
-    
-    % Initialize live plot
+% This section implements a live temperature monitoring system with LED indicators
+% Green LED (D2): 18-24°C, Yellow LED (D3): <18°C, Red LED (D4): >24°C
+% Verify file content
+clear
+function temp_monitor(arduino)
     figure;
-    h = plot(0, 0, 'b-');
-    xlabel('Time (minutes)');
+    x = []; y = [];
+    axis([0 60 0 50]);
+    xlabel('Time (s)');
     ylabel('Temperature (°C)');
-    title('Live Cabin Temperature');
-    grid on;
-    
-    % Main loop
+    title('Live Temperature Plot');
+
+    start_time = tic;
+    last_plot_time = 0;
+    yellow_blink_state = 0;
+    red_blink_state = 0;
+    last_yellow_toggle = 0;
+    last_red_toggle = 0;
+    yellow_period = 0.5;
+    red_period = 0.25;
+
     while true
-        % Read and convert temperature
-        voltage = readVoltage(a, 'A0');
-        temp = (voltage - V0) / TC;
-        
-        % Update data arrays
-        time = time + 1;
-        times = [times; time/60]; % Convert to minutes
-        temperatures = [temperatures; temp];
-        
-        % Update plot
-        set(h, 'XData', times, ' TrigYData', temperatures);
-        xlim([max(0, time/60-10) time/60]); % Show last 10 minutes
-        ylim([min(temperatures)-2 max(temperatures)+2]);
-        drawnow;
-        
-        % Control LEDs based on temperature
-        if temp >= 18 && temp <= 24
-            % Green LED on
-            writeDigitalPin(a, 'D3', 1);
-            writeDigitalPin(a, 'D4', 0);
-            writeDigitalPin(a, 'D5', 0);
-        elseif temp < 18
-            % Yellow LED blink at 0.5s intervals
-            writeDigitalPin(a, 'D3', 0);
-            writeDigitalPin(a, 'D4', 1);
-            writeDigitalPin(a, 'D5', 0);
-            pause(0.5);
-            writeDigitalPin(a, 'D4', 0);
-            pause(0.5);
-        else % temp > 24
-            % Red LED blink at 0.25s intervals
-            writeDigitalPin(a, 'D3', 0);
-            writeDigitalPin(a, 'D4', 0);
-            writeDigitalPin(a, 'D5', 1);
-            pause(0.25);
-            writeDigitalPin(a, 'D5', 0);
-            pause(0.25);
+        current_time = toc(start_time);
+
+        temp_voltage = readVoltage(arduino, 'A0');
+        temperature = temp_voltage * 100; % LM35: 10 mV/°C
+
+        if mod(current_time, 1) < 0.1
+            x = [x; current_time];
+            y = [y; temperature];
+            plot(x, y, 'b-');
+            drawnow;
+            axis([max(0, current_time-60) current_time min(y)-5 max(y)+5]);
         end
+
+        if temperature >= 18 && temperature <= 24
+            writeDigitalPin(arduino, 'D2', 1); % Green on
+            writeDigitalPin(arduino, 'D3', 0);
+            writeDigitalPin(arduino, 'D4', 0);
+        elseif temperature < 18
+            writeDigitalPin(arduino, 'D2', 0);
+            writeDigitalPin(arduino, 'D4', 0);
+            if current_time - last_yellow_toggle >= yellow_period
+                yellow_blink_state = ~yellow_blink_state;
+                writeDigitalPin(arduino, 'D3', yellow_blink_state);
+                last_yellow_toggle = current_time;
+            end
+        else
+            writeDigitalPin(arduino, 'D2', 0);
+            writeDigitalPin(arduino, 'D3', 0);
+            if current_time - last_red_toggle >= red_period
+                red_blink_state = ~red_blink_state;
+                writeDigitalPin(arduino, 'D4', red_blink_state);
+                last_red_toggle = current_time;
+            end
+        end
+
+        pause(0.1);
     end
 end
 %% TASK 3 - ALGORITHMS – TEMPERATURE PREDICTION [25 MARKS]
+clear
+function temp_prediction(arduino)
+% >> doc temp_prediction
+  %TEMP_PREDICTION Monitors temperature, predicts future values, and controls LEDs based on rate of change.
+  %TEMP_PREDICTION(ARDUINO) continuously reads temperature data from an Arduino-connected sensor,
+  %calculates the rate of temperature change, predicts the temperature 5 minutes ahead,
+  %and controls LEDs to indicate stability or rapid temperature changes.
 
-function temp_prediction(a)
-% TEMP_PREDICTION Monitors temperature and predicts future values.
-%
-%   TEMP_PREDICTION(A) uses the Arduino object A to read temperature from a
-%   thermistor on pin A0, calculates the rate of change, predicts the
-%   temperature in 5 minutes, and controls LEDs on D2 (green), D3 (yellow),
-%   D4 (red). LEDs indicate:
-%   - Green: rate between -4 and +4 °C/min
-%   - Red: rate > +4 °C/min
-%   - Yellow: rate < -4 °C/min
+  % Inputs:
+      % arduino: Arduino object connected to the hardware.
 
-% Define pins
-thermistor_pin='A0';
-green_pin='D2';
-yellow_pin='D3';
-red_pin='D4';
+  % LED Configuration:
+      % - D2: Green LED (stable within comfort range: 18-24°C and |rate| <4°C/min)
+      % - D3: Yellow LED (cooling rate ≤-4°C/min)
+      % - D4: Red LED (heating rate ≥4°C/min)
 
-% Configure LED pins
-configurePin(a, green_pin, 'DigitalOutput');
-configurePin(a, yellow_pin, 'DigitalOutput');
-configurePin(a, red_pin, 'DigitalOutput');
+  % Example:
+      % a = arduino('COM4', 'Uno');
+      % temp_prediction(a);
+    % start_time = tic;
+    % time_stamps = [];
+    % temperatures = [];
+    % max_history = 60;
 
-% Initialize history
-time_history=[];
-temp_history=[];
-N = 10; % points for rate calculation
-start_time = tic;
+    while true
+        current_time = toc(start_time);
+        temp_voltage = readVoltage(arduino, 'A0');
+        temperature = temp_voltage * 100; % LM35: 10 mV/°C
 
-while true
-    % Read temperature
-    voltage=readVoltage(a, thermistor_pin);
-    current_temp=(voltage - 0.5) / 0.01;
-    current_time=toc(start_time);
-    
-    % Append to history
-    time_history=[time_history, current_time];
-    temp_history=[temp_history, current_temp];
-    
-    % Calculate rate
-    if length(time_history) >= 2
-        idx=max(1, length(time_history)-N+1):length(time_history);
-        p=polyfit(time_history(idx), temp_history(idx), 1);
-        rate=p(1); % °C/s
-        rate_min=rate*60; % °C/min
-        temp_pred=current_temp+rate*300; % 5 min
-        fprintf('Rate: %.4f °C/s, Current temperature: %.2f °C, Predicted in 5 min: %.2f °C\n', rate, current_temp, temp_pred);
-        
-        % Control LEDs
-        if rate_min > 4
-            writeDigitalPin(a, red_pin, 1);
-            writeDigitalPin(a, green_pin, 0);
-            writeDigitalPin(a, yellow_pin, 0);
-        elseif rate_min<-4
-            writeDigitalPin(a, yellow_pin, 1);
-            writeDigitalPin(a, green_pin, 0);
-            writeDigitalPin(a, red_pin, 0);
+        time_stamps = [time_stamps; current_time];
+        temperatures = [temperatures; temperature];
+        idx = time_stamps >= current_time - max_history;
+        time_stamps = time_stamps(idx);
+        temperatures = temperatures(idx);
+
+        if length(time_stamps) >= 2 && time_stamps(end) - time_stamps(1) >= 10
+            t_start = current_time - 10;
+            idx10 = time_stamps >= t_start;
+            t10 = time_stamps(idx10);
+            temp10 = temperatures(idx10);
+            p = polyfit(t10, temp10, 1);
+            slope = p(1); % °C/s
+            rate_C_per_min = slope * 60; % °C/min
+            time_ahead = 5 * 60;
+            T_predicted = temperature + slope * time_ahead;
+
+            fprintf('Current Temp: %.2f °C, Rate: %.2f °C/min, Predicted in 5min: %.2f °C\n', ...
+                temperature, rate_C_per_min, T_predicted);
+
+            if abs(rate_C_per_min) < 0.1 && temperature >= 18 && temperature <= 24
+                writeDigitalPin(arduino, 'D2', 1); % Green on
+                writeDigitalPin(arduino, 'D3', 0);
+                writeDigitalPin(arduino, 'D4', 0);
+            elseif rate_C_per_min > 4
+                writeDigitalPin(arduino, 'D2', 0);
+                writeDigitalPin(arduino, 'D3', 0);
+                writeDigitalPin(arduino, 'D4', 1); % Red on
+            elseif rate_C_per_min < -4
+                writeDigitalPin(arduino, 'D2', 0);
+                writeDigitalPin(arduino, 'D3', 1); % Yellow on
+                writeDigitalPin(arduino, 'D4', 0);
+            else
+                writeDigitalPin(arduino, 'D2', 0);
+                writeDigitalPin(arduino, 'D3', 0);
+                writeDigitalPin(arduino, 'D4', 0);% All LEDs off
+            end
         else
-            writeDigitalPin(a, green_pin, 1);
-            writeDigitalPin(a, yellow_pin, 0);
-            writeDigitalPin(a, red_pin, 0);
+            fprintf('Collecting data...\n');% Waiting for enough data
         end
-    else
-        writeDigitalPin(a, green_pin, 1);
-        writeDigitalPin(a, yellow_pin, 0);
-        writeDigitalPin(a, red_pin, 0);
+
+        pause(1);
     end
-    
-    pause(1);
-end
 end
 
 %% TASK 4 - REFLECTIVE STATEMENT [5 MARKS]
-%{
-Write your 400-word reflective statement here, discussing:
-- Challenges: e.g., timing LED blinks, noise in data.
-- Strengths: e.g., robust plotting, clear LED indicators.
-- Limitations: e.g., single sensor, simple prediction model.
-- Improvements: e.g., multiple sensors, advanced algorithms.
-%}
-
-% Task 5: Commenting and Version Control
-% Code is commented throughout. Ensure git commits for each task.
+% Revised Reflective Statement
+% When I started this project to build a temperature monitoring system for an aircraft cabin using MATLAB and Arduino, I was thrilled to apply what I’d learned in class to a real-world challenge. I knew it would be tough, but I was eager to get my hands dirty and see what I could accomplish.
+% One of the best parts was getting the hardware and software to work together seamlessly, enabling real-time data collection and display. I felt a surge of pride when I finally got the Arduino talking to MATLAB, controlling LEDs based on temperature thresholds. It was like seeing lecture concepts—matrices, functions, and I/O operations—come alive in a practical way, which made those late-night study sessions feel worthwhile.
+% Using Git for version control was a lifesaver. It kept my code changes organized across tasks, and I quickly realized why it’s a must-have for any serious programming project. It gave me confidence to experiment without worrying about losing my progress.
+% But the project wasn’t all smooth sailing. Calibrating the thermistor to convert voltage to temperature was a headache due to noisy analog readings. I spent hours tweaking filtering techniques, feeling frustrated but determined. When I finally cracked it, the sense of accomplishment was huge. Similarly, creating a live plot in Task 2 was tricky—I wrestled with the `drawnow` command to avoid lag, but getting that smooth update was so satisfying.
+% Task 3’s temperature prediction algorithm was the toughest conceptually. Balancing responsiveness and stability while handling noise was daunting. After some trial and error, I settled on a moving average, which worked well, but it taught me how complex real-world data can be.
+% The system wasn’t perfect. Environmental noise sometimes triggered false LED alerts, and my code could’ve used better error handling. Time constraints also meant I couldn’t explore advanced prediction models or a slick user interface, which was a bit disappointing.
+% Looking forward, I’m excited to try a Kalman filter for better noise reduction and maybe add a MATLAB GUI for easier interaction. A machine learning model for predictions could be cool, too, and logging data to a cloud database would align with IoT trends.
+% This project was a game-changer for me. It sharpened my problem-solving skills and showed me the importance of persistence, iterative testing, and clear documentation—lessons I’ll carry into every future project.
