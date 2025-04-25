@@ -1,3 +1,5 @@
+% Juyi Yang
+% ssyjy10@nottingham.edu.cn
 % This section initializes the Arduino and calls the temp_monitor function
 % to perform real-time temperature monitoring with LED indicators.
 % Green LED (D2): 18-24°C (steady), Yellow LED (D3): <18°C (0.5s blink),
